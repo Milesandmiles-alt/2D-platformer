@@ -1,0 +1,574 @@
+#imports
+import pygame
+import random
+
+#game setup
+pygame.init()
+
+clock = pygame.time.Clock()
+fps=1000
+
+killscore = 0
+timescore = 0
+
+vec = pygame.math.Vector2
+
+display = 0
+
+#screen
+screen_width = 1000
+screen_height = 700
+screen = pygame.display.set_mode((screen_width,screen_height))
+pygame.display.set_caption = ("Pygame Platformer")
+
+#colours + fonts
+white = (255,255,255)
+black = (0,0,0)
+
+font30 = pygame.font.SysFont("Constantia", 30)
+font60 = pygame.font.SysFont("Constantia", 60)
+
+game = False
+
+#background
+bg = pygame.image.load("graphics/NEA background - starry night.jpg")
+bg = pygame.transform.scale(bg, (1000, 700))
+
+#load button images
+start=pygame.image.load("graphics/start_btn.png").convert_alpha()
+start=pygame.transform.scale(start, (int(start.get_width() * 5), int(start.get_height() * 5)))
+close=pygame.image.load("graphics/exit_btn.png").convert_alpha()
+close=pygame.transform.scale(close, (int(close.get_width() * 5), int(close.get_height() * 5)))
+levels=pygame.image.load("graphics/levels_btn.png").convert_alpha()
+levels=pygame.transform.scale(levels, (int(levels.get_width() * 5), int(levels.get_height() * 5)))
+
+
+#creating text
+def draw_text(text,font,text_col,x,y):
+    img=font.render(text, True, text_col)
+    screen.blit(img, (x, y))
+
+#camera
+class Camera(pygame.sprite.Group):
+    def __init__(self):
+        super().__init__()
+        self.display_surface = pygame.display.get_surface()
+
+        #camera offset
+        self.offset = pygame.math.Vector2()
+        self.half_w = self.display_surface.get_size()[0] // 2
+        self.half_h = self.display_surface.get_size()[1] // 2
+
+        #background
+        self.background = pygame.image.load("graphics/NEA background - starry night.jpg")
+        self.background_rect = self.background.get_rect(topleft = (0,0))
+
+    def center_target_camera(self,target):
+        self.offset.x = target.rect.centerx - self.half_w
+        self.offset.y = target.rect.centery - self.half_h
+
+    def custom_draw(self,player):
+        self.center_target_camera(player)
+        self.display_surface.blit(self.background,self.background_rect)
+
+        for sprite in sorted(self.sprites(),key=lambda sprite: sprite.rect.centery):
+            offset_pos = sprite.rect.topleft - self.offset
+            self.display_surface.blit(sprite.image,offset_pos)
+      
+
+#button class
+class Button():
+    def __init__(self, x, y, image):
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x,y)
+        self.clicked = False
+
+    def draw(self):
+        action = False
+        #get mouse position
+        pos = pygame.mouse.get_pos()
+        #check mouse over and clicked
+        if self.rect.collidepoint(pos):
+            if pygame.mouse.get_pressed()[0] == 1 and self.clicked==False:
+                self.clicked = True
+                action = True
+
+        if pygame.mouse.get_pressed()[0]==0:
+            self.clicked=False
+        #draw button on screen
+        screen.blit(self.image, (self.rect.x, self.rect.y))
+
+        return action
+
+
+#platform classes
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y, scale, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
+        self.image = pygame.image.load("graphics/Platform.png")
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+
+class LastPlat(pygame.sprite.Sprite):
+    def __init__(self, x, y, scale, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
+        self.image = pygame.image.load("graphics/Platform.png")
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+        self.players = players
+
+    def collision(self,p1,p2):
+        collided = pygame.sprite.spritecollide(self, self.players, False)
+        
+        if len(collided) == 2:
+            return True
+        else:
+            return False
+
+class PLAYER_ONE_CONTROLS:
+    up = pygame.K_w
+    left = pygame.K_a
+    right = pygame.K_d
+    shoot = pygame.K_SPACE
+
+
+class PLAYER_TWO_CONTROLS:
+    up = pygame.K_UP
+    left = pygame.K_LEFT
+    right = pygame.K_RIGHT
+    shoot = pygame.K_RETURN
+
+
+#players class
+class Player(pygame.sprite.Sprite):
+    def __init__(self, x, y, health, speed, scale, platforms, image_path, controls, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
+        self.image = pygame.image.load(image_path)
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+        self.rect.x = x
+        self.rect.y = y
+        #gravity/movement
+        self.speed = speed
+        self.gravity = 3
+        self.pressed = 0
+        self.vel = 0
+        self.dy = 0
+        self.is_falling = True
+        #health
+        self.health = 5
+        #other
+        self.last_shot = pygame.time.get_ticks()
+        self.controls = controls
+        self.platforms = platforms
+
+    def update(self,killscore,p1,p2):
+        time_now = pygame.time.get_ticks()
+        cooldown = 300
+        
+        #movement
+        key = pygame.key.get_pressed()
+        if key[self.controls.left]:
+            self.rect.x -= self.speed
+        if key[self.controls.right]:
+            self.rect.x += self.speed
+        if key[self.controls.up]:
+            self.rect.y -= 10
+            self.pressed = 1
+            lastjump = time_now
+            if self.pressed == 1:
+                self.rect.y += 0
+            if time_now - lastjump > cooldown:
+                self.pressed = 0
+
+        #shooting
+        cooldown = 300
+        
+        if key[self.controls.shoot] and time_now - self.last_shot > cooldown:
+            bullet = Bullet(self.rect.x+20, self.rect.y+20)
+            bullets.add(bullet)
+            sprites.add(bullet)
+            platforms.add(bullet)
+            self.last_shot = time_now
+            
+        #gravity
+        self.vel = self.gravity
+        self.rect.y += self.vel
+            
+        collided = pygame.sprite.spritecollide(self, self.platforms, False)
+        
+        for platform in collided:
+            self.rect.bottom = platform.rect.top
+            self.dy = 0
+
+        #health
+        if pygame.sprite.spritecollide(self, e_b_1, False, pygame.sprite.collide_mask):  
+            #reduce player health
+            self.health -= 1
+        if pygame.sprite.spritecollide(self,e_b_2,False,pygame.sprite.collide_mask):
+            self.health -= 2
+
+        if self.health <= 0:
+            self.kill()
+        
+class Bullet(pygame.sprite.Sprite):
+    def __init__(self, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.image.load("graphics/bullet.png")
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+
+    def update(self,killscore,p1,p2):
+        self.rect.x += 5
+        #delete once off screen
+        if self.rect.left > 2000:
+            self.kill()
+        #collision with enemies
+        if pygame.sprite.spritecollide(self,enemiesone,True):
+            self.kill()
+        if pygame.sprite.spritecollide(self,enemiestwo,True):
+            self.kill
+
+
+class CameraWrapper:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+        self.rect = pygame.Rect(0, 0, 1, 1)
+        
+    def update(self):
+        self.rect = self.a.rect.union(self.b.rect)
+
+
+#create enemies classes
+class EnemyOne(pygame.sprite.Sprite):
+    def __init__(self,x,y,scale,*grps):
+        pygame.sprite.Sprite.__init__(self,*grps)
+        self.image = pygame.image.load("graphics/enemy_one.png")
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+        self.move_counter = 0
+        self.move_direction = 1
+        self.platforms = platforms
+        self.gravity = 3
+        self.vel = 0
+        self.dy = 0
+        self.is_falling = True
+
+    def update(self,killscore,p1,p2):
+        #movement
+        self.rect.x += self.move_direction
+        self.move_counter += 1
+        if abs(self.move_counter) > 50:
+            self.move_direction *= -1
+            self.move_counter *= self.move_direction
+        #gravity
+        self.vel = self.gravity
+        self.rect.y += self.vel
+            
+        collided = pygame.sprite.spritecollide(self, self.platforms, False)
+        
+        for platform in collided:
+            self.rect.bottom = platform.rect.top
+            self.dy = 0
+
+        if pygame.sprite.spritecollide(self, bullets, False, pygame.sprite.collide_mask):  
+            self.kill()
+
+class EnemyTwo(pygame.sprite.Sprite):
+    def __init__(self,x,y,scale,*grps):
+        pygame.sprite.Sprite.__init__(self,*grps)
+        self.image = pygame.image.load("graphics/enemy_two.png")
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.center = [x, y]
+        self.move_counter = 0
+        self.move_direction = 1
+        self.platforms = platforms
+        self.gravity = 3
+        self.vel = 0
+        self.dy = 0
+        self.is_falling = True
+        self.health = 2
+
+    def update(self,killscore,p1,p2):
+        #movement
+        self.rect.x += self.move_direction
+        self.move_counter += 1
+        if abs(self.move_counter) > 50:
+            self.move_direction *= -1
+            self.move_counter *= self.move_direction
+        #gravity
+        self.vel = self.gravity
+        self.rect.y += self.vel
+            
+        collided = pygame.sprite.spritecollide(self, self.platforms, False)
+        
+        for platform in collided:
+            self.rect.bottom = platform.rect.top
+            self.dy = 0
+
+        if pygame.sprite.spritecollide(self, bullets, False, pygame.sprite.collide_mask):  
+            #reduce enemy health
+            self.health -= 1
+        if self.health == 0:
+            self.kill()
+
+#enemies bullet classes
+class BulletOne(pygame.sprite.Sprite):
+    def __init__(self,x,y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.image.load("graphics/enemy_bullet.png")
+        self.rect = self.image.get_rect()
+        self.rect.center = [x,y]
+
+    def update(self,killscore,p1,p2):
+        self.rect.x -= 2
+        if self.rect.x < -100:
+            self.kill()
+        if pygame.sprite.spritecollide(self, players, True, pygame.sprite.collide_mask):
+            self.kill()
+
+class BulletTwo(pygame.sprite.Sprite):
+    def __init__(self,x,y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = pygame.image.load("graphics/enemy_bullet.png")
+        self.rect = self.image.get_rect()
+        self.rect.center = [x,y]
+
+    def update(self,killscore,p1,p2):
+        self.rect.x -= 2
+        if self.rect.x < -100:
+            self.kill()
+        if pygame.sprite.spritecollide(self, players, True, pygame.sprite.collide_mask):
+            self.kill()
+
+#coins
+class Coin(pygame.sprite.Sprite):
+    def __init__(self,x,y,scale,*grps):
+        pygame.sprite.Sprite.__init__(self,*grps)
+        self.image = pygame.image.load("graphics/coin.png")
+        self.image = pygame.transform.scale(self.image, (int(self.image.get_width() * scale), int(self.image.get_height() * scale)))
+        self.rect = self.image.get_rect()
+        self.rect.center = [x,y]
+
+    def update(self,killscore,p1,p2):
+        if pygame.sprite.spritecollide(self, players, True, pygame.sprite.collide_mask):
+            self.kill()
+#create buttons
+start_button = Button(150,300,start)
+levels_button = Button(600,300,levels)
+exit_button = Button(400,400,close)
+
+#create sprite groups
+sprites = pygame.sprite.Group()
+camera_group = Camera()
+non_camera = pygame.sprite.Group()
+platforms = pygame.sprite.Group()
+players = pygame.sprite.Group()
+bullets = pygame.sprite.Group()
+enemiesone = pygame.sprite.Group()
+enemiestwo = pygame.sprite.Group()
+e_b_1 = pygame.sprite.Group()
+e_b_2 = pygame.sprite.Group()
+coins = pygame.sprite.Group()
+
+p1 = Player(100,100,3,10,0.45, platforms, "graphics/player 1.jpg", PLAYER_ONE_CONTROLS, sprites, camera_group)
+p2 = Player(200,100,3,10,0.1, platforms, "graphics/player 2.jpg", PLAYER_TWO_CONTROLS, sprites, camera_group)
+last_plat = LastPlat(1550, 200, 0.3, sprites, platforms)
+
+def levels(last_plat,p1,p2,start,level):
+    if level == 1:
+        if start == True:
+            p1 = Player(100,100,3,10,0.45, platforms, "graphics/player 1.jpg", PLAYER_ONE_CONTROLS, sprites, camera_group)
+            p2 = Player(200,100,3,10,0.1, platforms, "graphics/player 2.jpg", PLAYER_TWO_CONTROLS, sprites, camera_group)
+            players.add(p1)
+            players.add(p2)
+
+            e1 = EnemyTwo(575,550,0.05,sprites)
+            e2 = EnemyOne(725,400,0.05,sprites)
+            enemiestwo.add(e1)
+            enemiesone.add(e2)
+
+            wrapper = CameraWrapper(p1, p2)
+            sprites.target = wrapper
+
+            Platform(50,500,0.3, sprites, platforms)
+            Platform(400,600,0.3, sprites, platforms)
+            Platform(600,450,0.3, sprites, platforms)
+            Platform(950,400,0.3, sprites, platforms)
+            Platform(1200, 300, 0.3, sprites, platforms)
+            last_plat = LastPlat(1550, 200, 0.3, sprites, platforms)
+
+            c1 = Coin(450,550,0.05, sprites)
+            coins.add(c1)
+            
+        start = False
+        
+        collided = last_plat.collision(p1,p2)
+        if collided == True:
+            start = True
+            level = 2
+            s_e_1 = 2
+            s_e_2 = 0
+            start_coins = 5
+            return start, level, s_e_1, s_e_2, start_coins
+        else:
+            start = False
+            level = 1
+            s_e_1 = 1
+            s_e_2 = 1
+            start_coins = 1
+            return start,level,s_e_1,s_e_2,start_coins
+
+    elif level == 2:
+        if start == True:
+            platforms.clear()
+            
+            p1 = Player(100,100,3,10,0.45, platforms, "graphics/player 1.jpg", PLAYER_ONE_CONTROLS, sprites)
+            p2 = Player(200,100,3,10,0.1, platforms, "graphics/player 2.jpg", PLAYER_TWO_CONTROLS, sprites)
+            players.add(p1)
+            players.add(p2)
+
+
+            wrapper = CameraWrapper(p1, p2)
+            sprites.target = wrapper
+
+            Platform(50,700,0.3, sprites, platforms)
+            Platform(350,650,0.3, sprites, platforms)
+            Platform(600,450,0.3, sprites, platforms)
+            Platform(950,400,0.3, sprites, platforms)
+            Platform(1200, 300, 0.3, sprites, platforms)
+            last_plat = LastPlat(1550, 200, 0.3, sprites, platforms)
+            
+        start = False
+        
+        collided = last_plat.collision(p1,p2)
+        if collided == True:
+            pass         
+
+start = True
+level = 1
+killscore = 0
+
+#GAME
+run = True
+while run:
+    clock.tick(fps)
+
+    events=pygame.event.get()
+    for event in events:
+        if event.type==pygame.QUIT:
+            run = False
+
+    if game == False:
+        screen.fill((255,255,255))
+        s_e_1 = 0
+        s_e_2 = 0
+        start_coins = 0
+
+        if start_button.draw():
+            game = True
+
+        if exit_button.draw():
+            run = False
+
+        if levels_button.draw():
+            run = False
+        
+
+    else:
+        start,level,s_e_1, s_e_2, start_coins = levels(last_plat,p1,p2,start,level)
+        time_now = pygame.time.get_ticks()
+        
+        sprites.update(killscore,p1,p2)
+        camera_group.update(killscore,p1,p2)
+        camera_group.custom_draw(p1)
+    
+
+        odds_1 = 200
+        odds_2 = 500
+
+        for enemy in enemiesone:
+            if random.randint(0,odds_1) == 0:
+                enemy_bullet = BulletOne(enemy.rect.x,enemy.rect.y)
+                e_b_1.add(enemy_bullet)
+                sprites.add(enemy_bullet)
+
+        for enemy in enemiestwo:
+            if random.randint(0,odds_2) == 0:
+                enemy_bullet = BulletTwo(enemy.rect.x,enemy.rect.y)
+                e_b_2.add(enemy_bullet)
+                sprites.add(enemy_bullet)
+
+        screen.blit(bg, (0,0))
+        sprites.draw(screen)
+
+        timescore += 1
+
+        if p1.health == 5:
+            draw_text("player 1 : 5", font30, white, 20, 20)
+        elif p1.health == 4:
+            draw_text("player 1 : 4", font30, white, 20, 20)
+        elif p1.health == 3:
+            draw_text("player 1 : 3", font30, white, 20, 20)
+        elif p1.health == 2:
+            draw_text("player 1 : 2", font30, white, 20, 20)
+        elif p1.health == 1:
+            draw_text("player 1 : 1", font30, white, 20, 20)
+        elif p1.health <= 0:
+            draw_text("player 1 : 0", font30, white, 20, 20)
+
+        if p2.health == 5:
+            draw_text("player 2 : 5", font30, white, 20, 50)
+        elif p2.health == 4:
+            draw_text("player 2 : 4", font30, white, 20, 50)
+        elif p2.health == 3:
+            draw_text("player 2 : 3", font30, white, 20, 50)
+        elif p2.health == 2:
+            draw_text("player 2 : 2", font30, white, 20, 50)
+        elif p2.health == 1:
+            draw_text("player 2 : 1", font30, white, 20, 50)
+        elif p2.health <= 0:
+            draw_text("player 2 : 0", font30, white, 20, 50)
+
+        if p1.health == 0 and p2.health == 0:
+            screen.fill((255,255,255))
+            draw_text("GAME OVER", font60, black, 400, 350)
+            display += 1
+            if display >= 100:
+                game = False     
+
+    pygame.display.update()
+
+enemies = len(enemiesone)
+killscore = (s_e_1 - enemies) * 1000
+enemies = len(enemiestwo)
+killscore += (s_e_2 - enemies) * 2000
+
+end_coins = len(coins)
+coinscore = (start_coins - end_coins) * 500
+
+if timescore > 1000:
+    timescore = timescore * 100
+elif timescore > 500:
+    timescore = timescore * 250
+else:
+    timescore = timescore * 500
+
+totalscore = timescore + killscore + coinscore
+
+print("kill score:", killscore)
+print("time score:", timescore)
+print("coin score:", coinscore)
+print("total score:", totalscore)
+
+pygame.quit()
