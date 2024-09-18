@@ -63,12 +63,12 @@ class Camera(pygame.sprite.Group):
         self.background = pygame.image.load("graphics/NEA background - starry night.jpg")
         self.background_rect = self.background.get_rect(topleft = (0,0))
 
-    def center_target_camera(self,target):
-        self.offset.x = target.rect.centerx - self.half_w
-        self.offset.y = target.rect.centery - self.half_h
+    def center_target_camera(self,targetx, targety):
+        self.offset.x = targetx - self.half_w
+        self.offset.y = targety - self.half_h
 
-    def custom_draw(self,player):
-        self.center_target_camera(player)
+    def custom_draw(self, x, y):
+        self.center_target_camera(x, y)
         self.display_surface.blit(self.background,self.background_rect)
 
         for sprite in sorted(self.sprites(),key=lambda sprite: sprite.rect.centery):
@@ -164,6 +164,7 @@ class Player(pygame.sprite.Sprite):
         self.is_falling = True
         #health
         self.health = 5
+        self.dead = False
         #other
         self.last_shot = pygame.time.get_ticks()
         self.controls = controls
@@ -192,7 +193,7 @@ class Player(pygame.sprite.Sprite):
         cooldown = 300
         
         if key[self.controls.shoot] and time_now - self.last_shot > cooldown:
-            bullet = Bullet(self.rect.x+20, self.rect.y+20)
+            bullet = Bullet(self.rect.x+20, self.rect.y+20, camera_group)
             bullets.add(bullet)
             sprites.add(bullet)
             platforms.add(bullet)
@@ -216,11 +217,12 @@ class Player(pygame.sprite.Sprite):
             self.health -= 2
 
         if self.health <= 0:
+            self.dead = True 
             self.kill()
         
 class Bullet(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        pygame.sprite.Sprite.__init__(self)
+    def __init__(self, x, y, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
         self.image = pygame.image.load("graphics/bullet.png")
         self.rect = self.image.get_rect()
         self.rect.center = [x, y]
@@ -245,6 +247,9 @@ class CameraWrapper:
         
     def update(self):
         self.rect = self.a.rect.union(self.b.rect)
+
+    def get_rect(self):
+        a = pygame.sprite.Sprite()
 
 
 #create enemies classes
@@ -324,8 +329,8 @@ class EnemyTwo(pygame.sprite.Sprite):
 
 #enemies bullet classes
 class BulletOne(pygame.sprite.Sprite):
-    def __init__(self,x,y):
-        pygame.sprite.Sprite.__init__(self)
+    def __init__(self,x,y, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
         self.image = pygame.image.load("graphics/enemy_bullet.png")
         self.rect = self.image.get_rect()
         self.rect.center = [x,y]
@@ -338,8 +343,8 @@ class BulletOne(pygame.sprite.Sprite):
             self.kill()
 
 class BulletTwo(pygame.sprite.Sprite):
-    def __init__(self,x,y):
-        pygame.sprite.Sprite.__init__(self)
+    def __init__(self,x,y, *grps):
+        pygame.sprite.Sprite.__init__(self, *grps)
         self.image = pygame.image.load("graphics/enemy_bullet.png")
         self.rect = self.image.get_rect()
         self.rect.center = [x,y]
@@ -393,22 +398,22 @@ def levels(last_plat,p1,p2,start,level):
             players.add(p1)
             players.add(p2)
 
-            e1 = EnemyTwo(575,550,0.05,sprites)
-            e2 = EnemyOne(725,400,0.05,sprites)
+            e1 = EnemyTwo(575,550,0.05,sprites, camera_group)
+            e2 = EnemyOne(725,400,0.05,sprites, camera_group)
             enemiestwo.add(e1)
             enemiesone.add(e2)
 
-            wrapper = CameraWrapper(p1, p2)
+            wrapper = CameraWrapper(p1.rect, p2.rect)
             sprites.target = wrapper
 
-            Platform(50,500,0.3, sprites, platforms)
-            Platform(400,600,0.3, sprites, platforms)
-            Platform(600,450,0.3, sprites, platforms)
-            Platform(950,400,0.3, sprites, platforms)
-            Platform(1200, 300, 0.3, sprites, platforms)
-            last_plat = LastPlat(1550, 200, 0.3, sprites, platforms)
+            Platform(50,500,0.3, sprites, platforms, camera_group)
+            Platform(400,600,0.3, sprites, platforms, camera_group)
+            Platform(600,450,0.3, sprites, platforms, camera_group)
+            Platform(950,400,0.3, sprites, platforms, camera_group)
+            Platform(1200, 300, 0.3, sprites, platforms, camera_group)
+            last_plat = LastPlat(1550, 200, 0.3, sprites, platforms, camera_group)
 
-            c1 = Coin(450,550,0.05, sprites)
+            c1 = Coin(450,550,0.05, sprites, camera_group)
             coins.add(c1)
             
         start = False
@@ -439,7 +444,7 @@ def levels(last_plat,p1,p2,start,level):
             players.add(p2)
 
 
-            wrapper = CameraWrapper(p1, p2)
+            wrapper = CameraWrapper(p1.rect, p2.rect)
             sprites.target = wrapper
 
             Platform(50,700,0.3, sprites, platforms)
@@ -458,6 +463,7 @@ def levels(last_plat,p1,p2,start,level):
 start = True
 level = 1
 killscore = 0
+clock = pygame.time.Clock()
 
 #GAME
 run = True
@@ -491,54 +497,37 @@ while run:
         
         sprites.update(killscore,p1,p2)
         camera_group.update(killscore,p1,p2)
-        camera_group.custom_draw(p1)
     
-
         odds_1 = 200
         odds_2 = 500
 
         for enemy in enemiesone:
             if random.randint(0,odds_1) == 0:
-                enemy_bullet = BulletOne(enemy.rect.x,enemy.rect.y)
+                enemy_bullet = BulletOne(enemy.rect.x,enemy.rect.y, camera_group)
                 e_b_1.add(enemy_bullet)
                 sprites.add(enemy_bullet)
 
         for enemy in enemiestwo:
             if random.randint(0,odds_2) == 0:
-                enemy_bullet = BulletTwo(enemy.rect.x,enemy.rect.y)
+                enemy_bullet = BulletTwo(enemy.rect.x,enemy.rect.y, camera_group)
                 e_b_2.add(enemy_bullet)
                 sprites.add(enemy_bullet)
 
         screen.blit(bg, (0,0))
-        sprites.draw(screen)
+        #some logic to handle cases where one player dies
+        if p1.dead:
+            x, y = p2.rect.x, p2.rect.y
+        elif p2.dead:
+            x, y = p1.rect.x, p1.rect.y
+        else:    
+            x, y = ((p1.rect.x + p2.rect.x) / 2), ((p1.rect.y + p2.rect.y) / 2) 
+        camera_group.custom_draw(x, y)
 
         timescore += 1
 
-        if p1.health == 5:
-            draw_text("player 1 : 5", font30, white, 20, 20)
-        elif p1.health == 4:
-            draw_text("player 1 : 4", font30, white, 20, 20)
-        elif p1.health == 3:
-            draw_text("player 1 : 3", font30, white, 20, 20)
-        elif p1.health == 2:
-            draw_text("player 1 : 2", font30, white, 20, 20)
-        elif p1.health == 1:
-            draw_text("player 1 : 1", font30, white, 20, 20)
-        elif p1.health <= 0:
-            draw_text("player 1 : 0", font30, white, 20, 20)
-
-        if p2.health == 5:
-            draw_text("player 2 : 5", font30, white, 20, 50)
-        elif p2.health == 4:
-            draw_text("player 2 : 4", font30, white, 20, 50)
-        elif p2.health == 3:
-            draw_text("player 2 : 3", font30, white, 20, 50)
-        elif p2.health == 2:
-            draw_text("player 2 : 2", font30, white, 20, 50)
-        elif p2.health == 1:
-            draw_text("player 2 : 1", font30, white, 20, 50)
-        elif p2.health <= 0:
-            draw_text("player 2 : 0", font30, white, 20, 50)
+        draw_text(f"player 1 : {p1.health}", font30, white, 20, 20)
+        
+        draw_text(f"player 2 : {p2.health}", font30, white, 20, 50)
 
         if p1.health == 0 and p2.health == 0:
             screen.fill((255,255,255))
@@ -548,6 +537,7 @@ while run:
                 game = False     
 
     pygame.display.update()
+    clock.tick(60)
 
 enemies = len(enemiesone)
 killscore = (s_e_1 - enemies) * 1000
