@@ -63,12 +63,12 @@ class Camera(pygame.sprite.Group):
         self.background = pygame.image.load("graphics/NEA background - starry night.jpg")
         self.background_rect = self.background.get_rect(topleft = (0,0))
 
-    def center_target_camera(self,target):
-        self.offset.x = target.rect.centerx - self.half_w
-        self.offset.y = target.rect.centery - self.half_h
+    def center_target_camera(self,targetx, targety):
+        self.offset.x = targetx - self.half_w
+        self.offset.y = targety - self.half_h
 
-    def custom_draw(self,player):
-        self.center_target_camera(player)
+    def custom_draw(self, x, y):
+        self.center_target_camera(x, y)
         self.display_surface.blit(self.background,self.background_rect)
 
         for sprite in sorted(self.sprites(),key=lambda sprite: sprite.rect.centery):
@@ -164,6 +164,7 @@ class Player(pygame.sprite.Sprite):
         self.is_falling = True
         #health
         self.health = 5
+        self.dead = False
         #other
         self.last_shot = pygame.time.get_ticks()
         self.controls = controls
@@ -216,6 +217,7 @@ class Player(pygame.sprite.Sprite):
             self.health -= 2
 
         if self.health <= 0:
+            self.dead = True 
             self.kill()
         
 class Bullet(pygame.sprite.Sprite):
@@ -245,6 +247,9 @@ class CameraWrapper:
         
     def update(self):
         self.rect = self.a.rect.union(self.b.rect)
+
+    def get_rect(self):
+        a = pygame.sprite.Sprite()
 
 
 #create enemies classes
@@ -398,7 +403,7 @@ def levels(last_plat,p1,p2,start,level):
             enemiestwo.add(e1)
             enemiesone.add(e2)
 
-            wrapper = CameraWrapper(p1, p2)
+            wrapper = CameraWrapper(p1.rect, p2.rect)
             sprites.target = wrapper
 
             Platform(50,500,0.3, sprites, platforms, camera_group)
@@ -439,7 +444,7 @@ def levels(last_plat,p1,p2,start,level):
             players.add(p2)
 
 
-            wrapper = CameraWrapper(p1, p2)
+            wrapper = CameraWrapper(p1.rect, p2.rect)
             sprites.target = wrapper
 
             Platform(50,700,0.3, sprites, platforms)
@@ -509,7 +514,14 @@ while run:
                 sprites.add(enemy_bullet)
 
         screen.blit(bg, (0,0))
-        camera_group.custom_draw(p1)
+        #some logic to handle cases where one player dies
+        if p1.dead:
+            x, y = p2.rect.x, p2.rect.y
+        elif p2.dead:
+            x, y = p1.rect.x, p1.rect.y
+        else:    
+            x, y = ((p1.rect.x + p2.rect.x) / 2), ((p1.rect.y + p2.rect.y) / 2) 
+        camera_group.custom_draw(x, y)
 
         timescore += 1
 
